@@ -1,6 +1,6 @@
 # Deliverable Traceability
 
-Statuses distinguish implementation from verification. The original repository contained only README; implementation and verification status below reflect the local audit; commit/push status is updated after delivery.
+Statuses distinguish implementation from verification. The original repository contained only README; implementation and verification status below reflect the local audit; the source was pushed to GitHub as commit `be40ba1`.
 
 | Requirement | Implementation location | Database objects | Demonstration | Verification | Status |
 |---|---|---|---|---|---|
@@ -21,7 +21,7 @@ Statuses distinguish implementation from verification. The original repository c
 | Authentication and server-side RBAC | `backend/app/auth.py`, `backend/app/routers/auth.py`, `backend/app/routers/admin.py`, `docs/AUTHENTICATION_AND_RBAC.md` | users, roles, permissions, user_roles, auth_sessions, audit_logs | Verify analyst allowed/denied actions | Positive and denied permission tests passed; session DB integration pending | Implemented; partial verification |
 | Next.js analytics UI | `frontend/src/app/` | API-backed summary, overtake chart, season coverage, searchable race browser, lap/pit/tyre views and strategy form | Follow the start-here prompts, compare overtake counts by season, filter events and inspect per-race counts | npm lint/typecheck/build passed; dashboard, race browser, analysis, Admin manual-data and import routes returned HTTP 200; per-season and per-race overtake API verified | Implemented and verified locally |
 | Setup, testing, demo and viva documentation | `README.md`, `docs/SETUP_GUIDE.md`, `docs/TESTING.md`, `docs/DEMO_SCRIPT.md`, `docs/VIVA_QUESTIONS.md`, `docs/INDIVIDUAL_CONTRIBUTION.md` | N/A | Follow setup and demo walkthrough | Updated to observed checks; clean setup/full walkthrough pending | Written; partial verification |
-| GitHub source delivery | Git repository | N/A | Inspect remote repository contents | Commit and push status recorded in latest delivery notes | Pending |
+| GitHub source delivery | Git repository | N/A | Inspect remote repository contents | Committed and pushed as `be40ba1` to `origin/main` | Pending |
 
 ## Scope notes from supplied reference
 

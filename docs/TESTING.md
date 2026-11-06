@@ -24,7 +24,7 @@
 | API/database/auth integration | Partial | Public read endpoints, per-season coverage, championship tables, exact-race entrant lists, season-filtered race lists, login/logout cookies and ADMIN/ANALYST role separation were exercised against MySQL through the Next.js proxy. Other role-protected write paths remain unverified |
 | Dependency audit | Attention | `npm audit` reported 16 advisories (15 moderate, 1 high); review safe upgrades before delivery |
 
-The public-data integration is verified separately from FastF1 telemetry. Historical result and pit-stop data spans seven seasons; only 2024 has detailed lap rows. OpenF1 overtakes are present for 2023–2025 only. Current tests do not exercise MongoDB strategy-document CRUD, the FastF1 authenticated import, or the default embedding model. `npm audit` still reports 16 advisories (15 moderate, 1 high). At that point the repo work was uncommitted and unpushed; the latest delivery status is recorded below.
+The public-data integration is verified separately from FastF1 telemetry. Historical result and pit-stop data spans eight seasons (2018–2025); only 2024 has detailed lap rows. OpenF1 overtakes are present for 2023–2025 only. Current tests do not exercise MongoDB strategy-document CRUD, the FastF1 authenticated import, or the default embedding model. `npm audit` still reports 16 advisories (15 moderate, 1 high). The implementation was committed and pushed to `main` as `be40ba1`; the follow-up audit below records the current check status.
 
 ## Follow-up verification on 2026-11-06
 
@@ -51,4 +51,4 @@ The website and API are running locally at `http://127.0.0.1:3000` and `http://1
 | Frontend production build with dev server running | Passed | `npm run build`; development and production output now use separate folders to avoid Windows file-lock collisions. |
 | Data coverage in running site | Passed | Dashboard shows 2018–2025, 173 races and 3,458 imported classifications; lap analysis shows 1,033 records for 2024 Abu Dhabi. 2018 has 21 races and 420 classifications; lap detail varies by season and is shown as coverage. |
 | Setup proxy default | Fixed | `frontend/.env.example` now points at API port 8001, matching the documented FastAPI port. |
-| GitHub delivery | Pending | User requested push; changes will be committed and pushed after final diff and secret checks. |
+| GitHub delivery | Passed | Commit `be40ba1` was pushed to `origin/main`; the push command returned success (`8604fca..be40ba1 main -> main`). |
