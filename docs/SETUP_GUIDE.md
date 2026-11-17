@@ -29,6 +29,7 @@ docker compose exec -T mysql sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /sq
 docker compose exec -T mysql sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /sql/12_routines_and_triggers.sql'
 docker compose exec -T mysql sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /sql/13_driver_team_transfers.sql'
 docker compose exec -T mysql sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /sql/14_race_overtake_summaries.sql'
+docker compose exec -T mysql sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /sql/15_allow_constructor_substitutes.sql'
 docker compose exec -T mysql sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /sql/04_constraint_verification.sql'
 docker compose exec -T mysql sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" < /sql/05_database_privileges.sql'
 ```

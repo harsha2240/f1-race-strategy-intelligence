@@ -49,7 +49,7 @@ def list_admin_sessions(
                 WHERE (:season IS NULL OR s.year=:season)
                 GROUP BY se.session_id,se.race_id,se.session_type,se.session_date,se.source_session_key,
                          r.race_name,s.year,c.name
-                ORDER BY s.year DESC,r.race_date DESC,se.session_type
+                ORDER BY s.year DESC,r.race_date DESC,se.session_type,se.session_id
                 LIMIT :limit OFFSET :offset
             """), {"season": season, "limit": limit, "offset": offset}).mappings().all()
         return [dict(row) for row in rows]

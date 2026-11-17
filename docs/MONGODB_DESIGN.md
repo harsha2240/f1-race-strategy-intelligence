@@ -17,4 +17,4 @@ High-frequency samples are grouped into bounded windows to avoid unbounded growi
 
 ## Consistency limitation
 
-There is no distributed transaction with MySQL. The strategy-document endpoint checks that the MySQL plan exists, then inserts into MongoDB. A failure between those operations can leave the relational plan without a document; there is currently no retry queue, outbox, or reconciliation job. Validators and indexes were initialized on MongoDB 8; strategy-document CRUD and the RUD demo still need a full end-to-end verification.
+There is no distributed transaction with MySQL. The strategy-document endpoint checks that the MySQL plan exists, then inserts into MongoDB. A failure between those operations can leave the relational plan without a document; there is currently no retry queue, outbox, or reconciliation job. Validators and indexes were initialized on MongoDB 8. On 2026-11-09, the synthetic RUD/aggregation script and authenticated strategy-document create/read/update/delete API flow passed; all temporary Mongo documents were removed afterward.

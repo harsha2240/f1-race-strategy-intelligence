@@ -1,8 +1,9 @@
 // Synthetic document operations. The stable IDs refer to offline demo SQL rows only.
 const database = db.getSiblingDB("f1_strategy");
 const fixture = {
-  raceId: NumberLong(1),
-  driverId: NumberLong(1),
+  // Reserved synthetic identifiers keep this demo away from imported telemetry.
+  raceId: NumberLong("9000000000000000000"),
+  driverId: NumberLong("9000000000000000001"),
   lapNumber: 1,
   sector1Ms: 29100,
   sector2Ms: 31700,
@@ -14,7 +15,7 @@ const fixture = {
 
 // Create/upsert, read with a projection, update, then remove the dedicated fixture.
 database.laps_telemetry.updateOne(
-  { raceId: fixture.raceId, driverId: fixture.driverId, lapNumber: fixture.lapNumber },
+  { raceId: fixture.raceId, driverId: fixture.driverId, lapNumber: fixture.lapNumber, recordSource: "synthetic" },
   { $set: fixture },
   { upsert: true },
 );
@@ -23,7 +24,7 @@ printjson(database.laps_telemetry.findOne(
   { _id: 0, lapNumber: 1, sector1Ms: 1, recordSource: 1 },
 ));
 database.laps_telemetry.updateOne(
-  { raceId: fixture.raceId, driverId: fixture.driverId, lapNumber: fixture.lapNumber },
+  { raceId: fixture.raceId, driverId: fixture.driverId, lapNumber: fixture.lapNumber, recordSource: "synthetic" },
   { $set: { "speedTrapsKph.finish": 313.0 } },
 );
 

@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS driver_team_seasons (
   PRIMARY KEY (driver_team_id),
   UNIQUE KEY uq_driver_constructor_season (driver_id, constructor_id, season_id),
   KEY idx_dts_driver_season (driver_id, season_id),
-  UNIQUE KEY uq_constructor_season_number (constructor_id, season_id, car_number),
+  -- Car numbers may be reused by substitute drivers during the same season.
   KEY idx_dts_constructor_season (constructor_id, season_id),
   CONSTRAINT fk_dts_driver FOREIGN KEY (driver_id) REFERENCES drivers(driver_id) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_dts_constructor FOREIGN KEY (constructor_id) REFERENCES constructors(constructor_id) ON UPDATE CASCADE ON DELETE RESTRICT,

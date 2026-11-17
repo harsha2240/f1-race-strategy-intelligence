@@ -23,10 +23,12 @@ Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/ER_DIAGRAM.md`](docs
 
 Requirements: Docker Desktop with Compose, Python 3.12+, Node.js 20+, and npm.
 
-1. Copy `.env.example` to `.env` and replace the local placeholder credentials.
+**For an already configured checkout, keep its `.env` and database data. Do not run the initialization scripts or recreate Compose volumes.** The initialization steps below are for a brand-new, empty setup only. For the existing demo dataset, start the services and applications as described in [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
+
+1. **New, empty setup only:** copy `.env.example` to `.env` and replace the local placeholder credentials. For an existing checkout, keep its `.env` unchanged.
 2. Start local database services: `docker compose up -d mysql mongodb`.
-3. Initialize the MySQL schema and clearly labeled synthetic fixtures using the commands in [`docs/SETUP_GUIDE.md`](docs/SETUP_GUIDE.md).
-4. Apply MongoDB validators/indexes from `database/mongodb/01_collections_and_indexes.js`.
+3. **New, empty setup only:** initialize the MySQL schema and clearly labeled synthetic fixtures using the commands in [`docs/SETUP_GUIDE.md`](docs/SETUP_GUIDE.md).
+4. **New setup only:** apply MongoDB validators/indexes from `database/mongodb/01_collections_and_indexes.js`.
 5. Install API dependencies from `backend/requirements.txt` and start FastAPI from the `backend` folder with `uvicorn app.main:app --reload`.
 6. Create the first administrator with `python -m app.cli create-user --email admin@example.test --display-name "Project Admin" --role ADMIN`.
 7. Install frontend dependencies in `frontend/` and run `npm run dev`.
@@ -52,4 +54,6 @@ Run MySQL/MongoDB checks only after the local services are available. Record act
 
 ## Academic walkthrough
 
-Use [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) and [`docs/VIVA_QUESTIONS.md`](docs/VIVA_QUESTIONS.md) alongside the verification status in [`docs/TESTING.md`](docs/TESTING.md). The supplied database PDF is treated as a design reference; the full brief extends it with RBAC, audit and strategy entities.
+Use [`docs/TEAMMATE_PROJECT_BRIEF_AND_DEMO.md`](docs/TEAMMATE_PROJECT_BRIEF_AND_DEMO.md) as the complete teammate handoff and 15-minute walkthrough. It maps every website route to its API/database role and includes a SQL/NoSQL explanation and talk track. Keep [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md), [`docs/VIVA_QUESTIONS.md`](docs/VIVA_QUESTIONS.md), and [`docs/TESTING.md`](docs/TESTING.md) open for the route checklist, Q&A, and verification status. The supplied database PDF is treated as a design reference; the full brief extends it with RBAC, audit and strategy entities.
+
+The formatted academic report is [`docs/F1_Race_Strategy_Performance_Intelligence_DBMS_Report.docx`](docs/F1_Race_Strategy_Performance_Intelligence_DBMS_Report.docx). Fill in the student, SRN, institution, and academic-year fields before submission.

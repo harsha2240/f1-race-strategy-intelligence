@@ -27,7 +27,7 @@ export default function StrategySearchPage() {
       if (!user) throw new Error("Sign in as an analyst or administrator to search strategy reports.");
       const response = await fetch(`${API}/api/vector/search?q=${encodeURIComponent(query)}`, { credentials: "include", cache: "no-store" });
       const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.detail ?? "Similarity search failed.");
-      setMatches(body); if (body.length === 0) setError("No indexed strategy reports matched. Create reports, then select Build or refresh index.");
+      setMatches(body); if (body.length === 0) setError("No close matches. Try another search, or refresh the index if you recently saved reports.");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not search reports."); }
     finally { setBusy(false); }
   }

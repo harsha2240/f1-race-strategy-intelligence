@@ -1,5 +1,26 @@
 # Testing and Verification
 
+## Readiness audit on 2026-11-09
+
+| Check | Result | Evidence/limitation |
+|---|---|---|
+| Repository state | Passed | Clean `main`, at `f8ef69e` (`Reconcile verification and delivery notes`), tracking `origin/main` before this readiness pass. |
+| Frontend lint and typecheck | Passed | `npm run lint` and `npm run typecheck` completed. |
+| Frontend production build | Passed | Escalated retry of `npm run build` completed; all 19 routes generated, including the added tyre-stint analysis tab. |
+| Backend syntax | Passed | `python -m compileall -q backend\app backend\tests` completed. |
+| Focused backend tests | Passed | FastF1 preview, Jolpica, OpenF1, strategy simulator, and vector tests: 14 passed, one Chroma deprecation warning. The separate Starlette TestClient RBAC tests still stall under Python 3.14. |
+| Existing database services | Passed | MySQL 8.4 and MongoDB 8 were healthy on their existing Compose volumes. No initialization/reset was run. |
+| Website/API smoke checks | Passed | All 17 Next.js routes returned HTTP 200; health, dashboard, driver, constructor, race, season, championship, podium, circuit, pit-stop, tyre-stint, result, and strategy-report reads returned HTTP 200. Browser analysis showed 1,033 lap rows and 28 pit stops for 2024 Abu Dhabi; the tyre-stint tab displayed an honest 0-record state. |
+| Authentication/RBAC integration | Passed | Through the Next.js proxy: registration/login/me, ADMIN access 200, ANALYST denial 403, role grant/revoke, Admin user creation, and access refresh. Temporary users and audit entries were removed. |
+| Admin result/session CRUD | Passed | Temporary manual result and session each completed create/edit/delete (201/200/204) through the API proxy. Baseline SQL counts were restored. |
+| MongoDB RUD | Passed | `02_rud_and_aggregation_demo.js` created/read/updated/aggregated/deleted its reserved synthetic fixture; post-run fixture count was zero. Strategy-document API CRUD also passed. |
+| Vector semantic search | Passed | Default Chroma MiniLM ONNX model downloaded and loaded; authenticated report indexing and semantic search succeeded. Temporary vectors were removed; the persistent collection contains the 3 current saved reports. |
+| SQL query/DML demonstration | Passed | `10_query_demonstrations.sql` ran to exit code 0 (5,333 output lines). Nested/correlated queries, joins, window functions, both CTEs, and transaction examples executed; DML changes rolled back. |
+| Strategy-document create response | Fixed and verified | PyMongo adds an `ObjectId` to the inserted mapping. The API now omits `_id` from its JSON response; full create/read/update/delete flow passes. |
+| FastF1 authenticated import | Not verified | Requires F1TV Access credentials; none were provided. Public Jolpica import remains the demo path and was previously exercised through Admin UI. |
+
+The existing `.env` and source data were left unchanged. Test users, result/session rows, audit entries, Mongo documents, and temporary vectors were cleaned; SQL counts returned to their baseline (174 races, 3,460 total results, 3 users, 7 audit entries, 347 sessions, 3 strategy plans/reports). The Chroma index is intentionally populated with the 3 current reports so semantic search is ready to demonstrate. The app is running locally at `http://127.0.0.1:3000` with FastAPI at `http://127.0.0.1:8001`. Changes from this readiness pass are local and have not been pushed. FastF1 authenticated ingestion remains credential-dependent; it is not needed to demonstrate the public import path.
+
 ## Results observed on 2026-11-02
 
 | Check | Result | Evidence/limitation |
@@ -24,7 +45,7 @@
 | API/database/auth integration | Partial | Public read endpoints, per-season coverage, championship tables, exact-race entrant lists, season-filtered race lists, login/logout cookies and ADMIN/ANALYST role separation were exercised against MySQL through the Next.js proxy. Other role-protected write paths remain unverified |
 | Dependency audit | Attention | `npm audit` reported 16 advisories (15 moderate, 1 high); review safe upgrades before delivery |
 
-The public-data integration is verified separately from FastF1 telemetry. Historical result and pit-stop data spans eight seasons (2018–2025); only 2024 has detailed lap rows. OpenF1 overtakes are present for 2023–2025 only. Current tests do not exercise MongoDB strategy-document CRUD, the FastF1 authenticated import, or the default embedding model. `npm audit` still reports 16 advisories (15 moderate, 1 high). The implementation was committed and pushed to `main` as `be40ba1`; the follow-up audit below records the current check status.
+The public-data integration is verified separately from FastF1 telemetry. Historical result and pit-stop data spans eight seasons (2018–2025); only 2024 has detailed lap rows. OpenF1 overtakes are present for 2023–2025 only. Current tests do not exercise MongoDB strategy-document CRUD, the FastF1 authenticated import, or the default embedding model. `npm audit` previously reported 16 advisories (15 moderate, 1 high); rerun it before delivery if dependency-advisory status is required.
 
 ## Follow-up verification on 2026-11-06
 
@@ -51,4 +72,4 @@ The website and API are running locally at `http://127.0.0.1:3000` and `http://1
 | Frontend production build with dev server running | Passed | `npm run build`; development and production output now use separate folders to avoid Windows file-lock collisions. |
 | Data coverage in running site | Passed | Dashboard shows 2018–2025, 173 races and 3,458 imported classifications; lap analysis shows 1,033 records for 2024 Abu Dhabi. 2018 has 21 races and 420 classifications; lap detail varies by season and is shown as coverage. |
 | Setup proxy default | Fixed | `frontend/.env.example` now points at API port 8001, matching the documented FastAPI port. |
-| GitHub delivery | Passed | Commit `be40ba1` was pushed to `origin/main`; the push command returned success (`8604fca..be40ba1 main -> main`). |
+| GitHub delivery (at that time) | Passed | Historical push record. The current user-reported latest pushed commit is `f8ef69e`; see readiness audit above. |

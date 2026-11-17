@@ -173,6 +173,7 @@ def fetch_season(
     client: httpx.Client | None = None,
     cache_dir: Path | None = None,
     include_laps: bool = True,
+    progress: Callable[[str], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch and validate all season race, result, lap, and pit-stop payloads."""
     owned_client = client is None
@@ -185,8 +186,10 @@ def fetch_season(
         if not include_laps:
             results_by_round = _season_records(client, f"{year}/results.json", "Results", cache_dir)
         completed: list[dict[str, Any]] = []
-        for race in races:
+        for index, race in enumerate(races, start=1):
             round_number = _positive_int(race.get("round"), "round")
+            if progress:
+                progress(f"Downloading round {index} of {len(races)}: {race['raceName']}")
             if include_laps:
                 results = _collection(client, f"{year}/{round_number}/results.json", "Results", cache_dir)
                 pit_stops = None
@@ -209,7 +212,44 @@ def fetch_season(
             client.close()
 
 
-def _upsert_event(connection: Connection, year: int, event: dict[str, Any]) -> tuple[int, datetime, dict[str, int]]:
+def find_round_by_name(year: int, race_name: str) -> tuple[int, str]:
+    normalized = " ".join(race_name.casefold().split())
+    cache = Path(__file__).resolve().parents[3] / ".cache" / "jolpica"
+    with httpx.Client(timeout=30.0) as client:
+        races = _collection(client, f"{year}/races.json", "Races", cache)
+    matches = [race for race in races if " ".join(race["raceName"].casefold().split()) == normalized]
+    if len(matches) != 1:
+        raise ValueError(f"Enter the official Grand Prix name for a race in the {year} schedule.")
+    match = matches[0]
+    return _positive_int(match.get("round"), "round"), match["raceName"]
+
+
+def fetch_round(year: int, round_number: int, session_type: str, progress: Callable[[str], None]) -> dict[str, Any]:
+    """Fetch only the public results for the requested round and session."""
+    path = f"{year}/{round_number}"
+    cache = Path(__file__).resolve().parents[3] / ".cache" / "jolpica"
+    with httpx.Client(timeout=30.0) as client:
+        progress("Downloading event details")
+        races = _collection(client, f"{path}/races.json", "Races", cache)
+        if not races or str(races[0].get("round")) != str(round_number):
+            raise ValueError("Jolpica has no event for that season and round")
+        event = races[0]
+        if session_type == "QUALIFYING":
+            progress("Downloading qualifying results")
+            rows = _collection(client, f"{path}/qualifying.json", "QualifyingResults", cache)
+            if not rows:
+                raise ValueError("Jolpica has no qualifying results for this event")
+            return {**event, "QualifyingResults": rows}
+        progress("Downloading race classification")
+        results = _collection(client, f"{path}/results.json", "Results", cache)
+        if not results:
+            raise ValueError("Jolpica has no completed race classification for this event")
+        progress("Downloading available pit stops")
+        pit_stops = _collection(client, f"{path}/pitstops.json", "PitStops", cache)
+        return {**event, "Results": results, "PitStops": pit_stops}
+
+
+def _upsert_race(connection: Connection, year: int, event: dict[str, Any]) -> int:
     season = _positive_int(year, "season")
     round_number = _positive_int(event.get("round"), "round")
     circuit = event["Circuit"]
@@ -244,6 +284,58 @@ def _upsert_event(connection: Connection, year: int, event: dict[str, Any]) -> t
     """), {"year": season, "circuit": circuit_name, "key": race_key, "name": race_name, "date": race_date})
     race_id = int(connection.execute(text("SELECT race_id FROM races WHERE source_race_key=:key"),
                                      {"key": race_key}).scalar_one())
+    return race_id
+
+
+def _upsert_contract(connection: Connection, season: int, result: dict[str, Any]) -> int:
+    driver = result["Driver"]
+    constructor = result["Constructor"]
+    driver_key = f"jolpica:{driver['driverId']}"
+    team_key = f"jolpica:{constructor['constructorId']}"
+    number = _positive_int(result.get("number"), "car number")
+    driver_name = f"{driver['givenName']} {driver['familyName']}".strip()
+    for table, column, key, name in (("drivers", "source_driver_key", driver_key, driver_name),
+                                     ("constructors", "source_constructor_key", team_key, constructor["name"])):
+        by_name = connection.execute(text(f"SELECT {column} FROM {table} WHERE name=:name" if table == "constructors"
+                                          else f"SELECT {column} FROM {table} WHERE full_name=:name"),
+                                     {"name": name}).first()
+        if by_name and by_name[0] not in (None, key):
+            raise ValueError(f"{name} already exists under a different {table} source key")
+    connection.execute(text("""
+        INSERT INTO drivers (source_driver_key,driver_number,full_name,nationality,record_source)
+        VALUES (:key,:number,:name,:nationality,'imported')
+        ON DUPLICATE KEY UPDATE driver_number=VALUES(driver_number),full_name=VALUES(full_name),nationality=VALUES(nationality),record_source='imported'
+    """), {"key": driver_key, "number": number, "name": driver_name, "nationality": driver.get("nationality")})
+    connection.execute(text("""
+        INSERT INTO constructors (source_constructor_key,name,country,record_source)
+        VALUES (:key,:name,:country,'imported')
+        ON DUPLICATE KEY UPDATE name=VALUES(name),country=VALUES(country),record_source='imported'
+    """), {"key": team_key, "name": constructor["name"], "country": constructor.get("nationality")})
+    driver_id = connection.execute(text("SELECT driver_id FROM drivers WHERE source_driver_key=:key"),
+                                   {"key": driver_key}).scalar_one()
+    constructor_id = connection.execute(text("SELECT constructor_id FROM constructors WHERE source_constructor_key=:key"),
+                                        {"key": team_key}).scalar_one()
+    season_id = connection.execute(text("SELECT season_id FROM seasons WHERE year=:year"), {"year": season}).scalar_one()
+    connection.execute(text("""
+        INSERT INTO driver_team_seasons (driver_id,constructor_id,season_id,car_number)
+        VALUES (:driver,:team,:season,:number)
+        ON DUPLICATE KEY UPDATE car_number=VALUES(car_number)
+    """), {"driver": driver_id, "team": constructor_id, "season": season_id, "number": number})
+    driver_team_id = connection.execute(text("""
+        SELECT driver_team_id FROM driver_team_seasons
+        WHERE driver_id=:driver AND season_id=:season AND constructor_id=:constructor
+    """), {"driver": driver_id, "season": season_id, "constructor": constructor_id}).scalar_one_or_none()
+    if driver_team_id is None:
+        raise ValueError(
+            f"Could not create the season contract for {driver_name} with {constructor['name']} "
+            f"in {season}; apply database migration 15 to allow substitute car numbers"
+        )
+    return driver_team_id
+
+
+def _upsert_event(connection: Connection, year: int, event: dict[str, Any]) -> tuple[int, datetime, dict[str, int]]:
+    race_id = _upsert_race(connection, year, event)
+    race_key = f"jolpica:{year}:{_positive_int(event.get('round'), 'round')}"
     session_key = f"{race_key}:R"
     session_date = datetime.fromisoformat(f"{event['date']}T{event.get('time', '00:00:00').replace('Z', '+00:00')}").replace(tzinfo=None)
     connection.execute(text("""
@@ -254,43 +346,7 @@ def _upsert_event(connection: Connection, year: int, event: dict[str, Any]) -> t
 
     driver_result_ids: dict[str, int] = {}
     for result in event["Results"]:
-        driver = result["Driver"]
-        constructor = result["Constructor"]
-        driver_key = f"jolpica:{driver['driverId']}"
-        team_key = f"jolpica:{constructor['constructorId']}"
-        number = _positive_int(result.get("number"), "car number")
-        driver_name = f"{driver['givenName']} {driver['familyName']}".strip()
-        for table, column, key, name in (("drivers", "source_driver_key", driver_key, driver_name),
-                                         ("constructors", "source_constructor_key", team_key, constructor["name"])):
-            by_name = connection.execute(text(f"SELECT {column} FROM {table} WHERE name=:name" if table == "constructors"
-                                              else f"SELECT {column} FROM {table} WHERE full_name=:name"),
-                                         {"name": name}).first()
-            if by_name and by_name[0] not in (None, key):
-                raise ValueError(f"{name} already exists under a different {table} source key")
-        connection.execute(text("""
-            INSERT INTO drivers (source_driver_key,driver_number,full_name,nationality,record_source)
-            VALUES (:key,:number,:name,:nationality,'imported')
-            ON DUPLICATE KEY UPDATE driver_number=VALUES(driver_number),full_name=VALUES(full_name),nationality=VALUES(nationality),record_source='imported'
-        """), {"key": driver_key, "number": number, "name": driver_name, "nationality": driver.get("nationality")})
-        connection.execute(text("""
-            INSERT INTO constructors (source_constructor_key,name,country,record_source)
-            VALUES (:key,:name,:country,'imported')
-            ON DUPLICATE KEY UPDATE name=VALUES(name),country=VALUES(country),record_source='imported'
-        """), {"key": team_key, "name": constructor["name"], "country": constructor.get("nationality")})
-        driver_id = connection.execute(text("SELECT driver_id FROM drivers WHERE source_driver_key=:key"),
-                                       {"key": driver_key}).scalar_one()
-        constructor_id = connection.execute(text("SELECT constructor_id FROM constructors WHERE source_constructor_key=:key"),
-                                            {"key": team_key}).scalar_one()
-        season_id = connection.execute(text("SELECT season_id FROM seasons WHERE year=:year"), {"year": season}).scalar_one()
-        connection.execute(text("""
-            INSERT INTO driver_team_seasons (driver_id,constructor_id,season_id,car_number)
-            VALUES (:driver,:team,:season,:number)
-            ON DUPLICATE KEY UPDATE car_number=VALUES(car_number)
-        """), {"driver": driver_id, "team": constructor_id, "season": season_id, "number": number})
-        driver_team_id = connection.execute(text("""
-            SELECT driver_team_id FROM driver_team_seasons
-            WHERE driver_id=:driver AND season_id=:season AND constructor_id=:constructor
-        """), {"driver": driver_id, "season": season_id, "constructor": constructor_id}).scalar_one()
+        driver_team_id = _upsert_contract(connection, year, result)
         raw_position = result.get("position")
         position = int(raw_position) if raw_position and str(raw_position).isdigit() else None
         classified_laps = int(result["laps"]) if str(result.get("laps", "")).isdigit() else None
@@ -304,7 +360,7 @@ def _upsert_event(connection: Connection, year: int, event: dict[str, Any]) -> t
         result_id = int(connection.execute(text("""
             SELECT result_id FROM race_results WHERE race_id=:race AND driver_team_id=:driver_team
         """), {"race": race_id, "driver_team": driver_team_id}).scalar_one())
-        driver_result_ids[driver["driverId"]] = result_id
+        driver_result_ids[result["Driver"]["driverId"]] = result_id
     return race_id, session_date, driver_result_ids
 
 
@@ -312,6 +368,8 @@ def import_qualifying_season(
     connection: Connection,
     year: int,
     qualifying_by_round: dict[str, list[dict[str, Any]]],
+    *,
+    add_missing_contracts: bool = False,
 ) -> dict[str, int]:
     """Persist official qualifying positions and times for already-imported races."""
     year_value = _positive_int(year, "season")
@@ -358,7 +416,9 @@ def import_qualifying_season(
             """), {"driver_key": f"jolpica:{source_driver}",
                   "constructor_key": f"jolpica:{source_constructor}", "year": year_value}).scalar_one_or_none()
             if driver_team_id is None:
-                continue
+                if not add_missing_contracts:
+                    continue
+                driver_team_id = _upsert_contract(connection, year_value, {**row, "Constructor": constructor})
             raw_position = row.get("position")
             position = int(raw_position) if raw_position and str(raw_position).isdigit() else None
             parameters.append({
@@ -381,6 +441,31 @@ def import_qualifying_season(
         total["races"] += 1
         total["qualifying_rows"] += len(parameters)
     return total
+
+
+def existing_session(connection: Connection, year: int, round_number: int, session_type: str) -> int | None:
+    return connection.execute(text("""
+        SELECT se.session_id FROM sessions se JOIN races r ON r.race_id=se.race_id
+        WHERE r.source_race_key=:key AND se.session_type=:type FOR UPDATE
+    """), {"key": f"jolpica:{year}:{round_number}", "type": session_type}).scalar_one_or_none()
+
+
+def import_round(
+    connection: Connection, year: int, round_number: int, session_type: str, event: dict[str, Any],
+) -> int | None:
+    """Insert a missing session and its source rows in one transaction."""
+    if existing_session(connection, year, round_number, session_type) is not None:
+        return None
+    _upsert_race(connection, year, event)
+    if session_type == "QUALIFYING":
+        counts = import_qualifying_season(
+            connection, year, {str(round_number): event["QualifyingResults"]}, add_missing_contracts=True,
+        )
+        if not counts["qualifying_rows"]:
+            raise ValueError("Jolpica returned no usable qualifying results")
+        return counts["qualifying_rows"]
+    counts = import_season(connection, year, [event])
+    return counts["results"] + counts["pit_stop_rows"]
 
 
 def import_season(

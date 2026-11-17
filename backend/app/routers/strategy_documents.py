@@ -77,7 +77,8 @@ def create_strategy_document(
         raise HTTPException(status_code=409, detail="A strategy document already exists for this plan") from exc
     except PyMongoError as exc:
         raise _mongo_error() from exc
-    return {key: value for key, value in document.items()}
+    # PyMongo adds `_id` to the inserted mapping; ObjectId is not JSON serializable.
+    return {key: value for key, value in document.items() if key != "_id"}
 
 
 @router.patch("/{strategy_id}")

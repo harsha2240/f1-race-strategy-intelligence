@@ -57,3 +57,20 @@ def test_qualifying_season_records_are_grouped_by_round(monkeypatch):
         "1": [{"position": "1", "Q3": "1:23.456"}],
         "2": [{"position": "1", "Q3": "1:22.100"}],
     }
+
+
+def test_single_qualifying_import_fetches_only_the_selected_round(monkeypatch):
+    requests = []
+    row = {"position": "1", "Q3": "1:23.456"}
+
+    def get_json(client, path, offset, cache_dir):
+        requests.append(path)
+        race = {"round": "8", "raceName": "Monaco Grand Prix"}
+        if path.endswith("qualifying.json"):
+            race["QualifyingResults"] = [row]
+        return {"total": "1", "RaceTable": {"Races": [race]}}
+
+    monkeypatch.setattr(jolpica_import, "_get_json", get_json)
+    event = jolpica_import.fetch_round(2024, 8, "QUALIFYING", lambda _: None)
+    assert event["QualifyingResults"] == [row]
+    assert requests == ["2024/8/races.json", "2024/8/qualifying.json"]

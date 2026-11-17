@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import bindparam, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -110,6 +110,42 @@ def update_user_roles(
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail="Administration service unavailable") from exc
     return {"user_id": user_id, "roles": payload.roles}
+
+
+@router.delete("/users/{user_id}", status_code=204)
+def delete_user(
+    user_id: int,
+    actor: dict = Depends(require_permission("users:manage", require_csrf=True)),
+) -> Response:
+    if user_id == actor["user_id"]:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    try:
+        with engine.begin() as connection:
+            target = connection.execute(text("""
+                SELECT email,display_name FROM users WHERE user_id=:uid FOR UPDATE
+            """), {"uid": user_id}).mappings().first()
+            if target is None:
+                raise HTTPException(status_code=404, detail="User not found")
+            roles = connection.execute(text("""
+                SELECT r.name FROM user_roles ur JOIN roles r ON r.role_id=ur.role_id
+                WHERE ur.user_id=:uid ORDER BY r.name
+            """), {"uid": user_id}).scalars().all()
+            if "ADMIN" in roles:
+                admin_count = connection.execute(text("""
+                    SELECT COUNT(DISTINCT ur.user_id) FROM user_roles ur
+                    JOIN roles r ON r.role_id=ur.role_id WHERE r.name='ADMIN'
+                """)).scalar_one()
+                if admin_count <= 1:
+                    raise HTTPException(status_code=400, detail="At least one ADMIN account must remain")
+            connection.execute(text("""
+                INSERT INTO audit_logs (actor_user_id,action,entity_type,entity_key,details)
+                VALUES (:actor,'user.deleted','user',:entity_key,:details)
+            """), {"actor": actor["user_id"], "entity_key": str(user_id),
+                  "details": json.dumps({"email": target["email"], "display_name": target["display_name"], "roles": roles})})
+            connection.execute(text("DELETE FROM users WHERE user_id=:uid"), {"uid": user_id})
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="Administration service unavailable") from exc
+    return Response(status_code=204)
 
 
 @router.get("/audit")

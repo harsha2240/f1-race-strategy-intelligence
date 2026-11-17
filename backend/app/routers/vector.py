@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -7,6 +9,13 @@ from app.db import engine
 from app.vector_search import index_report, strategy_report_collection
 
 router = APIRouter(prefix="/api/vector", tags=["semantic search"])
+MAX_COSINE_DISTANCE = 0.83
+STOP_PATTERN = re.compile(r"\b(one|two|1|2)[\s_-]+stops?\b", re.IGNORECASE)
+STOP_WORDS = {"1": "one", "2": "two", "one": "one", "two": "two"}
+
+
+def _stop_counts(value: str) -> set[str]:
+    return {STOP_WORDS[match.lower()] for match in STOP_PATTERN.findall(value)}
 
 
 def _reports() -> list[dict]:
@@ -46,15 +55,23 @@ def search_strategy_reports(
 ) -> list[dict]:
     try:
         collection = strategy_report_collection()
-        if collection.count() == 0:
+        count = collection.count()
+        if count == 0:
             return []
         filters = {"race_id": race_id} if race_id is not None else None
-        result = collection.query(query_texts=[q], n_results=min(limit, collection.count()), where=filters)
+        requested_stops = _stop_counts(q)
+        candidates = max(limit, 20) if len(requested_stops) == 1 else limit
+        result = collection.query(query_texts=[q], n_results=min(candidates, count), where=filters)
         documents = result.get("documents", [[]])[0]
         metadatas = result.get("metadatas", [[]])[0]
         distances = result.get("distances", [[]])[0]
-        return [{"document": document, "metadata": metadata, "cosine_distance": distance}
-                for document, metadata, distance in zip(documents, metadatas, distances)]
+        matches = [
+            {"document": document, "metadata": metadata, "cosine_distance": distance}
+            for document, metadata, distance in zip(documents, metadatas, distances)
+            if distance <= MAX_COSINE_DISTANCE
+            and (len(requested_stops) != 1 or requested_stops & _stop_counts(metadata.get("strategy_type", "")))
+        ]
+        return matches[:limit]
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Semantic report search is unavailable") from exc
 
@@ -66,3 +83,4 @@ def delete_indexed_report(report_id: int, _: dict = Depends(require_permission("
         collection.delete(ids=[f"report-{report_id}"])
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Local vector index is unavailable") from exc
+

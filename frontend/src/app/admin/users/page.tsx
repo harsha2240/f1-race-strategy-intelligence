@@ -1,12 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { ArrowLeft, LockKeyhole, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, LockKeyhole, Trash2, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
 
 const API = "";
 type User = { user_id: number; email: string; display_name: string; is_active: boolean; roles: string[] };
-type Session = { csrf_token: string; roles: string[] };
+type Session = { user_id: number; csrf_token: string; roles: string[] };
 
 export default function AdminUsersPage() {
   const [session, setSession] = useState<Session | null>(null);
@@ -57,9 +57,23 @@ export default function AdminUsersPage() {
     finally { setBusy(false); }
   }
 
+  async function deleteUser(user: User) {
+    if (!session || user.user_id === session.user_id) return;
+    if (!window.confirm(`Delete ${user.display_name} (${user.email})? Their sessions will be revoked and their past audit entries retained without a user link.`)) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`${API}/api/admin/users/${user.user_id}`, {
+        method: "DELETE", credentials: "include", headers: { "X-CSRF-Token": session.csrf_token },
+      });
+      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail ?? "User deletion failed."); }
+      await loadUsers();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "User deletion failed."); }
+    finally { setBusy(false); }
+  }
+
   return <main className="min-h-screen bg-[#0a0c10] px-5 py-8 text-[#f4f5f7] md:px-10"><div className="mx-auto max-w-6xl">
-    <Link href="/" className="inline-flex items-center gap-2 text-xs text-[#929aa5] hover:text-white"><ArrowLeft size={14}/> Back to overview</Link>
-    <div className="mt-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="mb-2 text-[10px] font-bold tracking-[.2em] text-[#ff5461]">ADMINISTRATION</div><h1 className="text-3xl font-semibold tracking-[-.04em]">Users and roles</h1><p className="mt-2 text-sm text-[#858d99]">Account access is checked by the API against database-backed permissions.</p></div><div className="flex flex-wrap gap-2"><Link href="/admin/sessions" className="w-fit rounded-md border border-[#393f49] px-3 py-2 text-xs text-[#d7dbe0] hover:border-[#777]">Manage sessions</Link><Link href="/admin/imports" className="w-fit rounded-md border border-[#393f49] px-3 py-2 text-xs text-[#d7dbe0] hover:border-[#777]">FastF1 import history</Link></div></div>
+    <Link href="/" replace className="inline-flex items-center gap-2 text-xs text-[#929aa5] hover:text-white"><ArrowLeft size={14}/> Back to overview</Link>
+    <div className="mt-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="mb-2 text-[10px] font-bold tracking-[.2em] text-[#ff5461]">ADMINISTRATION</div><h1 className="text-3xl font-semibold tracking-[-.04em]">Users and roles</h1><p className="mt-2 text-sm text-[#858d99]">Account access is checked by the API against database-backed permissions.</p></div><div className="flex flex-wrap gap-2"><Link href="/admin/sessions" replace className="w-fit rounded-md border border-[#393f49] px-3 py-2 text-xs text-[#d7dbe0] hover:border-[#777]">Manage sessions</Link><Link href="/admin/imports" replace className="w-fit rounded-md border border-[#393f49] px-3 py-2 text-xs text-[#d7dbe0] hover:border-[#777]">Race data imports</Link><Link href="/admin/data" replace className="w-fit rounded-md border border-[#393f49] px-3 py-2 text-xs text-[#d7dbe0] hover:border-[#777]">Manual race data</Link></div></div>
     {error && <div role="alert" className="mt-5 rounded-md border border-[#694048] bg-[#261519] px-4 py-3 text-sm text-[#ffadb4]">{error}</div>}
     <section className="mt-7 grid gap-4 xl:grid-cols-[.8fr_1.2fr]">
       <form onSubmit={createUser} className="rounded-lg border border-[#252b34] bg-[#11151b] p-5"><div className="flex items-center gap-2 text-sm font-semibold"><UserPlus size={16} className="text-[#e10618]"/> Create account</div>
@@ -70,7 +84,7 @@ export default function AdminUsersPage() {
         <button disabled={busy || !session?.roles.includes("ADMIN")} className="mt-5 h-10 w-full rounded-md bg-[#e10618] text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50">{busy ? "Saving…" : "Create user"}</button>
       </form>
       <section className="overflow-hidden rounded-lg border border-[#252b34] bg-[#11151b]"><div className="flex items-center justify-between border-b border-[#252b34] px-5 py-4"><div className="flex items-center gap-2 text-sm font-semibold"><Users size={15} className="text-[#e10618]"/> Accounts</div><span className="text-[10px] text-[#78818d]">{users.length} users</span></div>
-        <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-xs"><thead className="bg-[#151a21] text-[10px] tracking-[.1em] text-[#858d99]"><tr><th className="px-4 py-3">USER</th><th className="px-4 py-3">STATUS</th><th className="px-4 py-3">ROLE</th></tr></thead><tbody className="divide-y divide-[#252b34]">{users.map(u=><tr key={u.user_id}><td className="px-4 py-3"><div className="font-medium">{u.display_name}</div><div className="mt-1 text-[10px] text-[#858d99]">{u.email}</div></td><td className="px-4 py-3">{u.is_active ? "Active" : "Disabled"}</td><td className="px-4 py-3"><select aria-label={`Role for ${u.email}`} disabled={busy} value={u.roles.includes("ADMIN") ? "ADMIN" : "ANALYST"} onChange={e=>changeRole(u,e.target.value)} className="rounded border border-[#303741] bg-[#0d1015] px-2 py-1"><option>ANALYST</option><option>ADMIN</option></select></td></tr>)}{!loading && users.length===0 && <tr><td colSpan={3} className="px-4 py-10 text-center text-[#858d99]">No accounts found.</td></tr>}{loading && <tr><td colSpan={3} className="px-4 py-10 text-center text-[#858d99]">Loading accounts…</td></tr>}</tbody></table></div>
+        <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-xs"><thead className="bg-[#151a21] text-[10px] tracking-[.1em] text-[#858d99]"><tr><th className="px-4 py-3">USER</th><th className="px-4 py-3">STATUS</th><th className="px-4 py-3">ROLE</th><th className="px-4 py-3">ACTIONS</th></tr></thead><tbody className="divide-y divide-[#252b34]">{users.map(u=><tr key={u.user_id}><td className="px-4 py-3"><div className="font-medium">{u.display_name}</div><div className="mt-1 text-[10px] text-[#858d99]">{u.email}</div></td><td className="px-4 py-3">{u.is_active ? "Active" : "Disabled"}</td><td className="px-4 py-3"><select aria-label={`Role for ${u.email}`} disabled={busy} value={u.roles.includes("ADMIN") ? "ADMIN" : "ANALYST"} onChange={e=>changeRole(u,e.target.value)} className="rounded border border-[#303741] bg-[#0d1015] px-2 py-1"><option>ANALYST</option><option>ADMIN</option></select></td><td className="px-4 py-3"><button type="button" aria-label={`Delete ${u.email}`} title={u.user_id===session?.user_id ? "You cannot delete your own account" : "Delete account"} disabled={busy || u.user_id===session?.user_id} onClick={()=>deleteUser(u)} className="text-[#ff8a94] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={15}/></button></td></tr>)}{!loading && users.length===0 && <tr><td colSpan={4} className="px-4 py-10 text-center text-[#858d99]">No accounts found.</td></tr>}{loading && <tr><td colSpan={4} className="px-4 py-10 text-center text-[#858d99]">Loading accounts…</td></tr>}</tbody></table></div>
       </section>
     </section>
     <p className="mt-4 text-[10px] text-[#66707b]">Role changes are audited. The backend rejects unauthorized requests even if this page is accessed directly.</p>

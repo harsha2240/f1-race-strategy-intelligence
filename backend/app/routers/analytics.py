@@ -308,6 +308,27 @@ def race_results(race_id: int) -> list[dict]:
         raise HTTPException(status_code=503, detail="Race database is unavailable") from exc
 
 
+@router.get("/races/{race_id}/qualifying")
+def race_qualifying(race_id: int) -> list[dict]:
+    statement = text("""
+        SELECT qr.position, d.full_name, c.name AS constructor,
+               qr.q1_time_ms, qr.q2_time_ms, qr.q3_time_ms
+        FROM qualifying_results qr
+        JOIN sessions se ON se.session_id = qr.session_id
+        JOIN driver_team_seasons dt ON dt.driver_team_id = qr.driver_team_id
+        JOIN drivers d ON d.driver_id = dt.driver_id
+        JOIN constructors c ON c.constructor_id = dt.constructor_id
+        WHERE se.race_id = :race_id AND se.session_type = 'QUALIFYING'
+          AND qr.record_source = 'imported'
+        ORDER BY qr.position IS NULL, qr.position, d.full_name, d.driver_id
+    """)
+    try:
+        with engine.connect() as connection:
+            return [dict(row) for row in connection.execute(statement, {"race_id": race_id}).mappings()]
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail="Qualifying results are unavailable") from exc
+
+
 @router.get("/analytics/driver-comparison")
 def compare_drivers(driver_ids: list[int] = Query(), season: int | None = Query(default=None, ge=1950, le=2100)) -> list[dict]:
     if not 2 <= len(driver_ids) <= 4 or len(set(driver_ids)) != len(driver_ids) or any(value < 1 for value in driver_ids):
