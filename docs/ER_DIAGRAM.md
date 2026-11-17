@@ -1,6 +1,6 @@
 # Entity Relationship Diagram
 
-This diagram matches the table names and relationships in `database/mysql/01_schema.sql`. MongoDB telemetry collections are documented separately because they do not have enforceable SQL foreign keys.
+This diagram covers all 26 MySQL tables defined in `database/mysql/01_schema.sql` and `database/mysql/14_race_overtake_summaries.sql`. Relationship lines represent enforced foreign keys.
 
 ```mermaid
 erDiagram
@@ -41,6 +41,7 @@ erDiagram
     varchar nationality
     date date_of_birth
     enum record_source
+    timestamp created_at
   }
   constructors {
     bigint constructor_id PK
@@ -103,6 +104,7 @@ erDiagram
     int q1_time_ms
     int q2_time_ms
     int q3_time_ms
+    enum record_source
   }
   lap_times {
     bigint lap_id PK
@@ -175,6 +177,7 @@ erDiagram
     varchar password_hash
     varchar display_name
     boolean is_active
+    timestamp created_at
   }
   roles {
     bigint role_id PK
@@ -195,6 +198,7 @@ erDiagram
     bigint user_id FK
     char token_hash UK
     char csrf_hash
+    timestamp created_at
     datetime expires_at
     datetime revoked_at
   }
@@ -233,4 +237,10 @@ erDiagram
   }
 ```
 
-The cross-season rule connecting each race result to a season-valid driver contract is enforced by MySQL triggers in `12_routines_and_triggers.sql`, because it spans two referenced relations. MongoDB stable IDs and collection schemas are shown in `MONGODB_DESIGN.md`.
+Composite keys such as a race's `(season_id, race_name)`, a session's `(race_id, session_type)`, and a driver contract's `(driver_id, constructor_id, season_id)` are specified in the SQL DDL. The session key allows one record of each type per race. The triggers in `database/mysql/12_routines_and_triggers.sql` enforce season consistency for race results, qualifying results and strategy plans.
+
+The local demo database has a unique index on `(constructor_id, season_id, car_number)`. A pending migration removes that index so substitute drivers can share a car number during a season. The migration leaves the ER relationships intact.
+
+In the local demo build, manual penalties and component failures are stored as entries in `audit_logs` and reference a result through the audit entity type and key. That reference does not create a separate table or foreign key. `import_runs` tracks the source, season, event and status without a foreign key to a race or session, so failed imports can be recorded before the source data exists.
+
+MongoDB strategy documents refer to MySQL plans by `strategyId`. ChromaDB indexes saved SQL reports by report ID. These are application-managed references across stores. See [MongoDB design](MONGODB_DESIGN.md) and [vector database design](VECTOR_DATABASE.md).
