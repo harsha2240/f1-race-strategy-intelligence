@@ -8,8 +8,39 @@ from app.auth import require_permission
 from app.db import engine
 from app.schemas_strategy import StrategyComparisonInput, StrategyPlanInput
 from app.strategy_simulator import balanced_stints, estimate_strategy
+from app.vector_search import index_report
 
 router = APIRouter(prefix="/api/strategy-plans", tags=["strategy plans"])
+
+
+def _index_saved_reports(report_ids: list[int]) -> None:
+    """Refresh Chroma entries after the SQL transaction commits.
+
+    SQL remains the source of truth. A temporary vector-store outage must not
+    turn a successfully saved strategy into a failed API request; users can
+    rebuild the full index from Search reports afterward.
+    """
+    if not report_ids:
+        return
+    try:
+        with engine.connect() as connection:
+            reports = connection.execute(text("""
+                SELECT sr.report_id, sr.plan_id, sr.title, sr.report_body,
+                       sp.assumptions, sp.strategy_type, sp.race_id, sp.driver_id,
+                       r.race_name, d.full_name AS driver_name
+                FROM strategy_reports sr
+                JOIN strategy_plans sp ON sp.plan_id = sr.plan_id
+                JOIN races r ON r.race_id = sp.race_id
+                JOIN drivers d ON d.driver_id = sp.driver_id
+                WHERE sr.report_id IN :report_ids
+            """).bindparams(bindparam("report_ids", expanding=True)),
+                {"report_ids": report_ids}).mappings().all()
+        for report in reports:
+            index_report(dict(report))
+    except Exception:
+        # Persistence in MySQL is authoritative; the manual index refresh is
+        # available if Chroma is temporarily unavailable.
+        return
 
 
 @router.post("/compare")
@@ -50,6 +81,7 @@ def compare_strategies(payload: StrategyComparisonInput, user: dict = Depends(re
                 raise HTTPException(status_code=503, detail="Strategy reference compounds are not configured")
 
             scenarios = []
+            report_ids = []
             definitions = [("one_stop", ["Medium", "Hard"]), ("two_stop", ["Soft", "Medium", "Hard"])]
             for scenario_key, compounds in definitions:
                 stints = balanced_stints(int(race["race_laps"]), compounds)
@@ -74,16 +106,18 @@ def compare_strategies(payload: StrategyComparisonInput, user: dict = Depends(re
                         VALUES(:plan_id,:compound_id,:number,:start,:end)
                     """), {"plan_id":plan_id,"compound_id":compound_ids[stint.compound],"number":index,
                           "start":stint.start_lap,"end":stint.end_lap})
-                connection.execute(text("""
+                report_insert = connection.execute(text("""
                     INSERT INTO strategy_reports(plan_id,title,report_body,report_metadata)
                     VALUES(:plan_id,:title,:body,:metadata)
                 """), {"plan_id":plan_id,"title":f"Hypothetical {scenario_key.replace('_','-')} comparison: {race['race_name']}",
                       "body":"Simplified hypothetical comparison. It is not an actual race outcome.",
                       "metadata":json.dumps(estimate)})
+                report_ids.append(int(report_insert.lastrowid))
                 scenarios.append({"name":scenario_key,"pit_stops":len(stints)-1,"plan_id":plan_id,"estimate":estimate})
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail="Strategy database is unavailable") from exc
 
+    _index_saved_reports(report_ids)
     delta_ms = float(scenarios[1]["estimate"]["estimated_total_ms"]) - float(scenarios[0]["estimate"]["estimated_total_ms"])
     return {"race":race["race_name"],"season":race["year"],"race_laps":race["race_laps"],
             "baseline_lap_ms":baseline,"baseline_source":baseline_source,"scenarios":scenarios,
@@ -150,14 +184,16 @@ def simulate_strategy(payload: StrategyPlanInput, user: dict = Depends(require_p
                     VALUES (:plan_id, :compound_id, :stint_number, :start_lap, :end_lap)
                 """), {"plan_id": plan_id, "compound_id": compound_ids[stint.compound.casefold()],
                       "stint_number": index, "start_lap": stint.start_lap, "end_lap": stint.end_lap})
-            connection.execute(text("""
+            report_insert = connection.execute(text("""
                 INSERT INTO strategy_reports (plan_id, title, report_body, report_metadata)
                 VALUES (:plan_id, :title, :body, :metadata)
             """), {"plan_id": plan_id, "title": f"Hypothetical strategy estimate: {race['race_name']}",
                   "body": "Estimated strategy time is a simplified model, not an actual race outcome.",
                   "metadata": json.dumps(estimate)})
+            report_id = int(report_insert.lastrowid)
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=503, detail="Strategy database is unavailable") from exc
+    _index_saved_reports([report_id])
     return {"plan_id": plan_id, "race": race["race_name"], "season": race["year"],
             "driver_id": payload.driver_id, "strategy_type": payload.strategy_type,
             "estimate": estimate, "assumptions": assumptions}
