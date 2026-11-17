@@ -1,6 +1,12 @@
 # Relational Schema
 
-This dictionary corresponds to the current MySQL DDL in `database/mysql/01_schema.sql`. All relations use InnoDB. `record_source` is carried on source facts so offline synthetic records can be distinguished from imported and manually entered rows.
+The presentation diagram shows the columns, data types, and keys for the same 20 tables as the [Chen ER diagram](ER_DIAGRAM.md). Open the image to zoom in.
+
+[![F1 relational schema diagram with 20 tables](F1_RELATIONAL_SCHEMA_PRESENTATION.png)](F1_RELATIONAL_SCHEMA_PRESENTATION.png)
+
+## Complete schema reference
+
+The full schema covers 26 InnoDB tables defined in `database/mysql/01_schema.sql` and `database/mysql/14_race_overtake_summaries.sql`. Source facts use `record_source` to distinguish synthetic, imported, and manually entered rows.
 
 | Relation | Primary key | Candidate/unique keys | Foreign keys and cardinality | Important constraints |
 |---|---|---|---|---|
@@ -8,8 +14,9 @@ This dictionary corresponds to the current MySQL DDL in `database/mysql/01_schem
 | `constructors` | `constructor_id` | `source_constructor_key`, `name` | none | constructor name required |
 | `seasons` | `season_id` | `year` | none | year 1950-2100 |
 | `circuits` | `circuit_id` | `source_circuit_key` | none | optional positive decimal circuit length |
-| `driver_team_seasons` | `driver_team_id` | (`driver_id`,`constructor_id`,`season_id`), (`constructor_id`,`season_id`,`car_number`) | driver, constructor, season each 1-to-many | supports substitute/team changes within a season; unique car number within constructor/season |
+| `driver_team_seasons` | `driver_team_id` | (`driver_id`,`constructor_id`,`season_id`) | driver, constructor, season each 1-to-many | supports substitute drivers and team changes within a season |
 | `races` | `race_id` | `source_race_key`, (`season_id`,`race_name`) | season and circuit each 1-to-many | race date/name required; indexed by date |
+| `race_overtake_summaries` | `race_id` | `source_session_key` | race 1-to-zero-or-one | optional OpenF1 summary per race; rows cascade when the race is deleted |
 | `sessions` | `session_id` | (`race_id`,`session_type`), `source_session_key` | race 1-to-many | type constrained by ENUM |
 | `race_results` | `result_id` | (`race_id`,`driver_team_id`) | race and contract each 1-to-many | nullable position; nonnegative points; trigger validates the contract's season |
 | `qualifying_results` | (`session_id`,`driver_team_id`) | same as primary key | session and contract each 1-to-many | optional Q1/Q2/Q3 milliseconds; trigger validates season membership |
